@@ -17,6 +17,18 @@ Use this skill for firmware that targets a Microchip tinyAVR 1-series MCU. Work 
 
 For device-specific capabilities, memory sizes, and toolchain identifiers, see [`references/device-family.md`](references/device-family.md). The device datasheet remains authoritative.
 
+## Datasheets
+
+Look for project-local datasheets first in [`docs/datasheets/tinyavr-1/`](../../../docs/datasheets/tinyavr-1/). Before relying on a datasheet, confirm that its filename and cover page include the exact target MCU; several PDFs cover a group of related devices.
+
+From the repository root, list the available local datasheets with:
+
+```sh
+rg --files docs/datasheets/tinyavr-1 -g '*.pdf'
+```
+
+If no local PDF covers the target device, say so and obtain or ask for the exact official Microchip datasheet before making device-specific hardware claims. Do not substitute a nearby family member's datasheet merely because it has similar peripherals.
+
 ## Evidence hierarchy
 
 When sources disagree, use this order:
