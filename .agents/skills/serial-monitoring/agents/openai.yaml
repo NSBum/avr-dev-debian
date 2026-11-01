@@ -1,0 +1,4 @@
+interface:
+  display_name: "Serial Monitoring"
+  short_description: "Monitor USART-to-USB serial output from AVR boards"
+  default_prompt: "Use $serial-monitoring to identify and monitor a connected USB serial adapter."
