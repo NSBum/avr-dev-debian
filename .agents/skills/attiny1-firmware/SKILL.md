@@ -29,6 +29,8 @@ rg --files docs/datasheets/tinyavr-1 -g '*.pdf'
 
 If no local PDF covers the target device, say so and obtain or ask for the exact official Microchip datasheet before making device-specific hardware claims. Do not substitute a nearby family member's datasheet merely because it has similar peripherals.
 
+Look at the pin-assignments.md reference in this skill.
+
 ## Evidence hierarchy
 
 When sources disagree, use this order:
@@ -40,6 +42,8 @@ When sources disagree, use this order:
 5. The supplementary references in this skill.
 
 Investigate disagreements between the datasheet and headers. Do not silently choose one, and do not invent registers, bit masks, peripheral capabilities, or interrupt vectors.
+
+But if there are questions about pin assignments, especially those relating to default vs. alternate pins, you must raise a question with the user.
 
 ## References
 
