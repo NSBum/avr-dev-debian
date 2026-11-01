@@ -1,0 +1,9 @@
+#ifndef TEST_ONBOARD_GPIO_3217_BOARD_H
+#define TEST_ONBOARD_GPIO_3217_BOARD_H
+
+#include <avr/io.h>
+
+#define ONBOARD_GPIO_PORT PORTA
+#define ONBOARD_GPIO_PIN  PIN4_bm
+
+#endif
