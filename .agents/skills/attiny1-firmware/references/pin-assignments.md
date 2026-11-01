@@ -22,10 +22,10 @@ The following local datasheets were reviewed:
 | `docs/datasheets/tinyavr-1/attiny-417-814-816-817.pdf` | ATtiny417, ATtiny814, ATtiny816, ATtiny817 | Table 5-1, p. 18 |
 | `docs/datasheets/tinyavr-1/attiny-1614-1616-1617.pdf` | ATtiny1614, ATtiny1616, ATtiny1617 | Table 5-1, p. 18 |
 | `docs/datasheets/tinyavr-1/attiny-3216-3216-datasheet.pdf` | ATtiny3216, ATtiny3217 | Table 5-1, p. 16 |
+| `docs/datasheets/tinyavr-1/ATtiny212-214-412-414-416-DataSheet-DS40002287A.pdf` | ATtiny212, ATtiny214, ATtiny412, ATtiny414, ATtiny416 | Tables 5-1 and 5-2, pp. 18–19 |
 
-The local repository does not contain datasheets for ATtiny212, ATtiny214,
-ATtiny412, ATtiny414, or ATtiny416. Their assignments are intentionally not
-filled in here.
+The older `attiny-212-412.pdf` is also present locally, but the newer grouped
+DS40002287A datasheet is used for the assignments below.
 
 ## PORTMUX controls
 
@@ -43,6 +43,112 @@ filled in here.
 `TCA0 WO3..WO5` alternate selection applies in split mode as described by
 the datasheet. `TCA0 WO0..WO2` selection applies in normal mode and to the
 corresponding low-byte channels in split mode.
+
+The smaller ATtiny212/214/412/414/416 family has only `TCA00..TCA03` and
+only `TCB0`; the eight-pin package has additional bond-out limitations.
+
+## ATtiny212/214/412/414/416
+
+### 14-pin and 20-pin USART0
+
+| Signal | Default | Alternate |
+|---|---|---|
+| `TxD` | `PB2` | `PA1` |
+| `RxD` | `PB3` | `PA2` |
+| `XCK` | `PB1` | `PA3` |
+| `XDIR` | `PB0` | `PA4` |
+
+### 14-pin and 20-pin SPI0
+
+| Signal | Default | Alternate |
+|---|---|---|
+| `MOSI` | `PA1` | `PC2` (20-pin) / `PA6` (14-pin) |
+| `MISO` | `PA2` | `PC1` (20-pin) / `PA7` (14-pin) |
+| `SCK` | `PA3` | `PC0` (20-pin only) |
+| `SS` | `PA4` | `PC3` (20-pin only) |
+
+The datasheet explicitly specifies the 14-pin alternate SPI `MOSI` and
+`MISO` positions as `PA6` and `PA7`; `PC0..PC3` are not bonded out on the
+14-pin package.
+
+### 14-pin and 20-pin TWI0
+
+| Signal | Default | Alternate |
+|---|---|---|
+| `SDA` | `PB1` | `PA1` |
+| `SCL` | `PB0` | `PA2` |
+
+### 14-pin and 20-pin TCA0 waveform outputs
+
+| Signal | Default | Alternate |
+|---|---|---|
+| `WO0` | `PB0` | `PB3` |
+| `WO1` | `PB1` | `PB4` |
+| `WO2` | `PB2` | `PB5` |
+| `WO3` | `PA3` | `PC3` |
+| `WO4` | `PA4` | — |
+| `WO5` | `PA5` | — |
+
+The alternate `WO0..WO2` routes require the corresponding `PB3..PB5`
+pin, and alternate `WO3` requires `PC3`; therefore those alternate routes
+are unavailable on the 14-pin package. `WO4` and `WO5` have no PORTMUX
+alternate in this device family.
+
+### 14-pin and 20-pin TCB0, TCD0, and CCL
+
+| Function | Default | Alternate |
+|---|---|---|
+| TCB0 `WO` | `PA5` | `PC0` (20-pin only) |
+| TCD0 `WOA` | `PA4` | — |
+| TCD0 `WOB` | `PA5` | — |
+| TCD0 `WOC` | — | `PC0` (20-pin only) |
+| TCD0 `WOD` | `PC1` | — |
+| CCL `LUT0-OUT` | `PA4` | `PB4` |
+| CCL `LUT1-OUT` | `PA7` | `PC1` |
+
+The TCD0 `WOC` entry is marked alternate in Table 5-1. The table does not
+provide a separate PORTMUX control for TCD0, so preserve the datasheet's
+classification and verify the exact TCD configuration before use.
+
+### Eight-pin package
+
+| Peripheral signal | Default | Alternate |
+|---|---|---|
+| USART0 `TxD` | `PA6` | `PA1` |
+| USART0 `RxD` | `PA7` | `PA2` |
+| USART0 `XCK` | `PA3` | — |
+| USART0 `XDIR` | `PA0` | — |
+| SPI0 `MOSI` | `PA1` | `PA6` |
+| SPI0 `MISO` | `PA2` | `PA7` |
+| SPI0 `SCK` | `PA3` | — |
+| SPI0 `SS` | `PA0` | — |
+| TWI0 `SDA` | `PA1` | — |
+| TWI0 `SCL` | `PA2` | — |
+| TCA0 `WO0` | `PA3` | `PA7` |
+| TCA0 `WO1` | `PA1` | — |
+| TCA0 `WO2` | `PA2` | — |
+| TCA0 `WO3` | `PA3` | — |
+| TCB0 `WO` | `PA6` | — |
+| TCD0 `WOA` | `PA6` | — |
+| TCD0 `WOB` | `PA7` | — |
+| CCL `LUT0-OUT` | `PA6` | — |
+| CCL `LUT1-OUT` | `PA7` | — |
+
+The eight-pin table is Table 5-2. `PA0` remains the `RESET/UPDI` pin even
+though it carries default USART0 `XDIR` and SPI0 `SS` functions in that
+table.
+
+### Fixed or non-PORTMUX functions
+
+- `PA0`: `RESET/UPDI`; `ADC0 AIN0`.
+- `PA2`: `EVOUT0`; `ADC0 AIN2`.
+- `PA3`: `EXTCLK`; `ADC0 AIN3`.
+- `PB2`: `TOSC2`, `EVOUT1`.
+- `PB3`: `TOSC1`.
+- `PB5`: `CLKOUT`.
+- `PC2`: `EVOUT2`.
+- ADC, AC, DAC, and other fixed functions are package/device dependent;
+  consult Table 5-1 or Table 5-2 before board layout.
 
 ## ATtiny1614/1616/1617 and ATtiny3216/3217
 
@@ -200,6 +306,17 @@ These numbers are transcribed from the package columns in Table 5-1.
 | `PB2` | 7 |
 | `PB3` | 6 |
 
+### 8-pin SOIC
+
+| Port pin | Package pin |
+|---|---:|
+| `PA0` | 6 |
+| `PA1` | 4 |
+| `PA2` | 5 |
+| `PA3` | 7 |
+| `PA6` | 2 |
+| `PA7` | 3 |
+
 ### 20-pin SOIC / VQFN
 
 | Port pin | 20-pin SOIC | 20-pin VQFN |
@@ -262,5 +379,6 @@ also provide 20-pin VQFN.
   bonded out on every package.
 - Analog channel names and package pin numbers are device/package specific;
   check the exact Table 5-1 and pinout diagram before board layout.
-- The 8-pin package assignments and the five devices without local
-  datasheets are not represented here yet.
+- The ATtiny212/214/412/414/416 8-pin assignments are package-specific and
+  are listed separately above; no 8-pin package exists for the larger
+  devices covered by the other grouped datasheets.
