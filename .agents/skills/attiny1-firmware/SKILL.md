@@ -50,6 +50,7 @@ Read the relevant reference when it contains guidance for the task, but use the 
 | [`device-family.md`](references/device-family.md) | Device selection and family differences |
 | [`clocks-and-ccp.md`](references/clocks-and-ccp.md) | Clock setup and CCP-protected registers |
 | [`gpio-and-portmux.md`](references/gpio-and-portmux.md) | GPIO and alternate peripheral routing |
+| [`pin-assignments.md`](references/pin-assignments.md) | Device/package pin assignments and PORTMUX positions |
 | [`timers-and-interrupts.md`](references/timers-and-interrupts.md) | TCA, TCB, RTC, PWM, interrupts, and scheduling |
 | [`serial-peripherals.md`](references/serial-peripherals.md) | USART, SPI, TWI/I2C, buffering, and baud rates |
 | [`code-review.md`](references/code-review.md) | Firmware correctness, timing, safety, and concurrency review |
