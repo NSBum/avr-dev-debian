@@ -38,8 +38,12 @@ Find the FT232 device, usually `/dev/ttyUSB0` or a stable path under
 `/dev/serial/by-id/`, then capture at 9600 8-N-1:
 
 ```sh
-stty -F /dev/ttyUSB0 9600 cs8 -cstopb -parenb -ixon -ixoff raw
-timeout 5s cat /dev/ttyUSB0
+PORT=/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_A9EHDVJR-if00-port0
+
+stty -F "$PORT" 9600 cs8 -cstopb -parenb \
+    -ixon -ixoff -crtscts -echo raw
+
+timeout 5s cat "$PORT
 ```
 
 Reset or power-cycle the MCU after starting capture to see the first line.
