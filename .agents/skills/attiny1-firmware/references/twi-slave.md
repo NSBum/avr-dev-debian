@@ -116,6 +116,16 @@ address+R, data, NACK, STOP
 The master must tolerate clock stretching. The ATtiny3217 client holds SCL
 low while the ISR prepares an ACK or data response.
 
+## Reusable implementation
+
+The repository includes a callback-based implementation at
+[`../../../tinyavr1-libraries/twi-slave/`](../../../tinyavr1-libraries/twi-slave/).
+It provides the register-pointer protocol described here and supports the
+standard write-then-repeated-START-read sequence. Compile its C source into
+the application and provide short read/write callbacks. Verify the exact
+device's TWI route and status-flag behavior before reusing it on another
+tinyAVR 1-series member; it does not replace device-specific validation.
+
 ## Debugging procedure
 
 Start with a minimal client that has no UART, timer, parser, or register map:
