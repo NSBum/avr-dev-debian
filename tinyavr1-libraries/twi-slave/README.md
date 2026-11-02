@@ -33,3 +33,10 @@ static uint8_t read_register(uint8_t reg)
 
 tinyavr1_twi_slave_init(0x30U, read_register, NULL);
 ```
+
+The important constraints are:
+
+- Don’t use delays, UART output, or long computations in callbacks.
+- Keep callbacks deterministic because they run inside the TWI ISR.
+- Avoid non-atomic multi-byte data access; snapshot such values before serving them.
+- If maximum speed becomes important, application-specific callbacks could later be replaced with inline register access.
