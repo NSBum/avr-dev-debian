@@ -9,3 +9,5 @@ choose their source files and provide device- or board-specific callbacks.
 
 - [`twi-slave/`](twi-slave/): callback-based TWI0/I²C client/slave for the
   default tinyAVR 1-series route.
+- [`ld2410c/`](ld2410c/): streaming LD2410C report-frame parser independent of
+  the application USART driver.
