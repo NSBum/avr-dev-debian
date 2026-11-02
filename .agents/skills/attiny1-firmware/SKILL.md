@@ -57,7 +57,12 @@ Read the relevant reference when it contains guidance for the task, but use the 
 | [`pin-assignments.md`](references/pin-assignments.md) | Device/package pin assignments and PORTMUX positions |
 | [`timers-and-interrupts.md`](references/timers-and-interrupts.md) | TCA, TCB, RTC, PWM, interrupts, and scheduling |
 | [`serial-peripherals.md`](references/serial-peripherals.md) | USART, SPI, TWI/I2C, buffering, and baud rates |
+| [`twi-slave.md`](references/twi-slave.md) | TWI/I2C client/slave state machines, first-byte handling, and diagnostics |
 | [`code-review.md`](references/code-review.md) | Firmware correctness, timing, safety, and concurrency review |
+
+For TWI/I2C client/slave firmware, read `twi-slave.md` in addition to the
+general serial-peripherals guidance before implementing or reviewing the
+transaction state machine.
 
 ## Workflow
 
