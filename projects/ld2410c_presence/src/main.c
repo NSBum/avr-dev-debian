@@ -6,6 +6,7 @@
 
 #include "board.h"
 #include "config.h"
+#include "tinyavr1_ld2410c.h"
 #include "tinyavr1_twi_slave.h"
 
 enum target_mode {
@@ -28,6 +29,7 @@ static volatile uint8_t latest_raw_state;
 static volatile uint16_t latest_distance_cm;
 static volatile uint16_t latest_moving_distance_cm;
 static volatile uint16_t latest_stationary_distance_cm;
+static tinyavr1_ld2410c_parser_t radar_parser;
 static void clock_init(void)
 {
     /* FUSE.OSCCFG must select OSC20M. */
@@ -115,53 +117,6 @@ static void set_blink_mode(enum target_mode mode)
     }
 }
 
-static uint16_t little_endian_u16(const uint8_t *bytes)
-{
-    return (uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8U);
-}
-
-static enum target_mode decode_basic_report(const uint8_t *payload,
-                                             uint16_t payload_length,
-                                             uint8_t *raw_state_out,
-                                             uint16_t *moving_distance_out,
-                                             uint16_t *stationary_distance_out)
-{
-    uint8_t state;
-    uint16_t moving_distance;
-    uint16_t stationary_distance;
-
-    /* Basic reports contain 13 payload bytes. Engineering reports retain
-       these first 13 bytes, so they are safe to decode the same way. */
-    if ((payload_length < 13U) ||
-        (payload[0] != 0x01U && payload[0] != 0x02U) ||
-        (payload[1] != 0xAAU) ||
-        (payload[11] != 0x55U) ||
-        (payload[12] != 0x00U)) {
-        return TARGET_NONE;
-    }
-
-    state = payload[2];
-    moving_distance = little_endian_u16(&payload[3]);
-    stationary_distance = little_endian_u16(&payload[6]);
-
-    *raw_state_out = state;
-    *moving_distance_out = moving_distance;
-    *stationary_distance_out = stationary_distance;
-
-    /* State 0x03 means both; moving indication has priority. */
-    if (((state == 0x01U) || (state == 0x03U)) &&
-        (moving_distance <= TARGET_RANGE_CM)) {
-        return TARGET_MOVING;
-    }
-
-    if (((state == 0x02U) || (state == 0x03U)) &&
-        (stationary_distance <= TARGET_RANGE_CM)) {
-        return TARGET_STATIONARY;
-    }
-
-    return TARGET_NONE;
-}
-
 static uint8_t status_for_state(uint8_t raw_state,
                                 uint16_t moving_distance,
                                 uint16_t stationary_distance,
@@ -224,87 +179,28 @@ static uint8_t i2c_read_register(uint8_t reg)
     }
 }
 
-static void process_report_byte(uint8_t value)
+static void radar_report_received(const tinyavr1_ld2410c_report_t *report)
 {
-    static const uint8_t header[4] = {0xF4U, 0xF3U, 0xF2U, 0xF1U};
-    static const uint8_t tail[4] = {0xF8U, 0xF7U, 0xF6U, 0xF5U};
-    static uint8_t frame[64];
-    static uint8_t header_index;
-    static uint8_t tail_index;
-    static uint8_t frame_index;
-    static uint16_t payload_length;
-    static uint8_t state;
     static enum target_mode current_mode = TARGET_NONE;
-    static uint8_t raw_state;
-    static uint16_t moving_distance;
-    static uint16_t stationary_distance;
-    enum target_mode mode;
+    enum target_mode mode = TARGET_NONE;
 
-    if (state == 0U) {
-        if (value == header[header_index]) {
-            ++header_index;
-            if (header_index == 4U) {
-                state = 1U;
-                frame_index = 0U;
-                payload_length = 0U;
-            }
-        } else {
-            header_index = (value == header[0]) ? 1U : 0U;
-        }
-        return;
+    update_radar_snapshot(report->target_state,
+                           report->moving_distance_cm,
+                           report->stationary_distance_cm);
+
+    if (((report->target_state == TINYAVR1_LD2410C_STATE_MOVING) ||
+         (report->target_state == TINYAVR1_LD2410C_STATE_BOTH)) &&
+        (report->moving_distance_cm <= TARGET_RANGE_CM)) {
+        mode = TARGET_MOVING;
+    } else if (((report->target_state == TINYAVR1_LD2410C_STATE_STATIONARY) ||
+                (report->target_state == TINYAVR1_LD2410C_STATE_BOTH)) &&
+               (report->stationary_distance_cm <= TARGET_RANGE_CM)) {
+        mode = TARGET_STATIONARY;
     }
 
-    if (state == 1U) {
-        frame[frame_index++] = value;
-        if (frame_index == 2U) {
-            payload_length = little_endian_u16(frame);
-            if ((payload_length == 0U) || (payload_length > 56U)) {
-                state = 0U;
-                header_index = 0U;
-            } else {
-                frame_index = 0U;
-                state = 2U;
-            }
-        }
-        return;
-    }
-
-    if (state == 2U) {
-        frame[frame_index++] = value;
-        if (frame_index >= payload_length) {
-            frame_index = 0U;
-            tail_index = 0U;
-            state = 3U;
-        }
-        return;
-    }
-
-    if (value != tail[tail_index]) {
-        state = 0U;
-        header_index = (value == header[0]) ? 1U : 0U;
-        return;
-    }
-
-    ++tail_index;
-    if (tail_index == 4U) {
-        mode = decode_basic_report(frame, payload_length,
-                                   &raw_state,
-                                   &moving_distance,
-                                   &stationary_distance);
-        if ((payload_length >= 13U) &&
-            ((frame[0] == 0x01U) || (frame[0] == 0x02U)) &&
-            (frame[1] == 0xAAU) && (frame[11] == 0x55U) &&
-            (frame[12] == 0x00U)) {
-            update_radar_snapshot(raw_state,
-                                  moving_distance,
-                                  stationary_distance);
-        }
-        if (mode != current_mode) {
-            set_blink_mode(mode);
-            current_mode = mode;
-        }
-        state = 0U;
-        header_index = 0U;
+    if (mode != current_mode) {
+        set_blink_mode(mode);
+        current_mode = mode;
     }
 }
 
@@ -349,12 +245,13 @@ int main(void)
     usart0_init();
     i2c_address = i2c_address_init();
     tinyavr1_twi_slave_init(i2c_address, i2c_read_register, 0);
+    tinyavr1_ld2410c_init(&radar_parser, radar_report_received);
     timer_init();
     sei();
 
     for (;;) {
         if (rx_read(&value) != 0U) {
-            process_report_byte(value);
+            tinyavr1_ld2410c_receive_byte(&radar_parser, value);
         }
     }
 }
