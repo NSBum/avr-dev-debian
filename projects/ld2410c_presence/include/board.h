@@ -10,4 +10,14 @@
 #define RADAR_RX_PORT PORTB
 #define RADAR_RX_PIN  PIN3_bm
 
+/* TWI0 default route: PB1/SDA and PB0/SCL. */
+#define I2C_PORT PORTB
+#define I2C_SDA_PIN PIN1_bm
+#define I2C_SCL_PIN PIN0_bm
+
+/* External pulldowns hold these address-select inputs low. */
+#define I2C_ADDRESS_PORT PORTC
+#define I2C_ADDRESS_A0_PIN PIN4_bm
+#define I2C_ADDRESS_A1_PIN PIN5_bm
+
 #endif

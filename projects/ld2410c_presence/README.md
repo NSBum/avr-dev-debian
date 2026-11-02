@@ -14,6 +14,15 @@ The basic report payload contains target state, moving distance, and
 stationary distance. State `0x03` (moving and stationary) is treated as moving
 when the moving distance qualifies; otherwise its stationary distance is used.
 
+## I2C interface
+
+TWI0 operates as an I2C slave on the default PB1/SDA and PB0/SCL pins. The
+address is `0x30` plus PC4 as bit 0 and PC5 as bit 1, so the selectable address
+range is `0x30` through `0x33`. PC4 and PC5 require external pulldowns when
+their high state is selected.
+
+The read-only register map is documented in [`hardware.md`](hardware.md).
+
 ## Build
 
 ```sh

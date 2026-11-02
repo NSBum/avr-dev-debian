@@ -21,6 +21,15 @@ static volatile uint8_t blink_active;
 static volatile uint16_t blink_half_period_ms;
 static volatile uint16_t blink_elapsed_ms;
 
+/* The main loop is the only writer. TWI0 reads these in its ISR. */
+static volatile uint8_t latest_status;
+static volatile uint8_t latest_raw_state;
+static volatile uint16_t latest_distance_cm;
+static volatile uint16_t latest_moving_distance_cm;
+static volatile uint16_t latest_stationary_distance_cm;
+static volatile uint8_t i2c_register;
+static volatile uint8_t i2c_tx_started;
+
 static void clock_init(void)
 {
     /* FUSE.OSCCFG must select OSC20M. */
@@ -44,6 +53,24 @@ static void usart0_init(void)
     USART0.CTRLC = USART_CHSIZE_8BIT_gc;
     USART0.CTRLB = USART_RXEN_bm;
     USART0.CTRLA = USART_RXCIE_bm;
+}
+
+static void i2c_init(void)
+{
+    uint8_t address = (uint8_t)(I2C_BASE_ADDRESS |
+                                ((I2C_ADDRESS_PORT.IN &
+                                  I2C_ADDRESS_A0_PIN) != 0U ? 0x01U : 0U) |
+                                ((I2C_ADDRESS_PORT.IN &
+                                  I2C_ADDRESS_A1_PIN) != 0U ? 0x02U : 0U));
+
+    PORTMUX.CTRLB &= (uint8_t)~PORTMUX_TWI0_bm;
+    I2C_PORT.DIRCLR = I2C_SDA_PIN | I2C_SCL_PIN;
+    I2C_ADDRESS_PORT.DIRCLR = I2C_ADDRESS_A0_PIN | I2C_ADDRESS_A1_PIN;
+
+    TWI0.SADDR = (uint8_t)(address << 1U);
+    TWI0.SADDRMASK = 0U;
+    TWI0.SCTRLA = TWI_APIEN_bm | TWI_DIEN_bm | TWI_PIEN_bm |
+                  TWI_ENABLE_bm;
 }
 
 static void timer_init(void)
@@ -103,7 +130,10 @@ static uint16_t little_endian_u16(const uint8_t *bytes)
 }
 
 static enum target_mode decode_basic_report(const uint8_t *payload,
-                                             uint16_t payload_length)
+                                             uint16_t payload_length,
+                                             uint8_t *raw_state_out,
+                                             uint16_t *moving_distance_out,
+                                             uint16_t *stationary_distance_out)
 {
     uint8_t state;
     uint16_t moving_distance;
@@ -123,6 +153,10 @@ static enum target_mode decode_basic_report(const uint8_t *payload,
     moving_distance = little_endian_u16(&payload[3]);
     stationary_distance = little_endian_u16(&payload[6]);
 
+    *raw_state_out = state;
+    *moving_distance_out = moving_distance;
+    *stationary_distance_out = stationary_distance;
+
     /* State 0x03 means both; moving indication has priority. */
     if (((state == 0x01U) || (state == 0x03U)) &&
         (moving_distance <= TARGET_RANGE_CM)) {
@@ -137,6 +171,68 @@ static enum target_mode decode_basic_report(const uint8_t *payload,
     return TARGET_NONE;
 }
 
+static uint8_t status_for_state(uint8_t raw_state,
+                                uint16_t moving_distance,
+                                uint16_t stationary_distance,
+                                uint16_t *selected_distance)
+{
+    if ((raw_state == 0x01U) || (raw_state == 0x03U)) {
+        *selected_distance = moving_distance;
+        return 0x01U;
+    }
+
+    if (raw_state == 0x02U) {
+        *selected_distance = stationary_distance;
+        return 0x02U;
+    }
+
+    *selected_distance = 0U;
+    return 0x00U;
+}
+
+static void update_radar_snapshot(uint8_t raw_state,
+                                  uint16_t moving_distance,
+                                  uint16_t stationary_distance)
+{
+    uint16_t selected_distance;
+    uint8_t status = status_for_state(raw_state,
+                                      moving_distance,
+                                      stationary_distance,
+                                      &selected_distance);
+
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+        latest_raw_state = raw_state;
+        latest_status = status;
+        latest_distance_cm = selected_distance;
+        latest_moving_distance_cm = moving_distance;
+        latest_stationary_distance_cm = stationary_distance;
+    }
+}
+
+static uint8_t i2c_register_value(uint8_t reg)
+{
+    switch (reg) {
+    case 0x00U:
+        return latest_status;
+    case 0x01U:
+        return (uint8_t)latest_distance_cm;
+    case 0x02U:
+        return (uint8_t)(latest_distance_cm >> 8U);
+    case 0x03U:
+        return (uint8_t)latest_moving_distance_cm;
+    case 0x04U:
+        return (uint8_t)(latest_moving_distance_cm >> 8U);
+    case 0x05U:
+        return (uint8_t)latest_stationary_distance_cm;
+    case 0x06U:
+        return (uint8_t)(latest_stationary_distance_cm >> 8U);
+    case 0x07U:
+        return latest_raw_state;
+    default:
+        return 0U;
+    }
+}
+
 static void process_report_byte(uint8_t value)
 {
     static const uint8_t header[4] = {0xF4U, 0xF3U, 0xF2U, 0xF1U};
@@ -148,6 +244,9 @@ static void process_report_byte(uint8_t value)
     static uint16_t payload_length;
     static uint8_t state;
     static enum target_mode current_mode = TARGET_NONE;
+    static uint8_t raw_state;
+    static uint16_t moving_distance;
+    static uint16_t stationary_distance;
     enum target_mode mode;
 
     if (state == 0U) {
@@ -197,13 +296,61 @@ static void process_report_byte(uint8_t value)
 
     ++tail_index;
     if (tail_index == 4U) {
-        mode = decode_basic_report(frame, payload_length);
+        mode = decode_basic_report(frame, payload_length,
+                                   &raw_state,
+                                   &moving_distance,
+                                   &stationary_distance);
+        if ((payload_length >= 13U) &&
+            ((frame[0] == 0x01U) || (frame[0] == 0x02U)) &&
+            (frame[1] == 0xAAU) && (frame[11] == 0x55U) &&
+            (frame[12] == 0x00U)) {
+            update_radar_snapshot(raw_state,
+                                  moving_distance,
+                                  stationary_distance);
+        }
         if (mode != current_mode) {
             set_blink_mode(mode);
             current_mode = mode;
         }
         state = 0U;
         header_index = 0U;
+    }
+}
+
+ISR(TWI0_TWIS_vect)
+{
+    uint8_t status = TWI0.SSTATUS;
+
+    /* When address and data flags are both pending, service DIF first so
+       the first byte of a read is loaded before releasing the clock. */
+    if ((status & TWI_DIF_bm) != 0U) {
+        if ((status & TWI_DIR_bm) == 0U) {
+            /* Register pointer write; additional writes are ignored. */
+            i2c_register = TWI0.SDATA;
+            i2c_tx_started = 0U;
+            TWI0.SCTRLB = TWI_ACKACT_ACK_gc | TWI_SCMD_RESPONSE_gc;
+        } else if (i2c_tx_started == 0U) {
+            /* RXACK is not valid until after the first byte is sent. */
+            TWI0.SDATA = i2c_register_value(i2c_register);
+            i2c_tx_started = 1U;
+            TWI0.SCTRLB = TWI_ACKACT_ACK_gc | TWI_SCMD_RESPONSE_gc;
+        } else if ((status & TWI_RXACK_bm) == 0U) {
+            ++i2c_register;
+            TWI0.SDATA = i2c_register_value(i2c_register);
+            TWI0.SCTRLB = TWI_ACKACT_ACK_gc | TWI_SCMD_RESPONSE_gc;
+        } else {
+            TWI0.SCTRLB = TWI_SCMD_COMPTRANS_gc;
+        }
+    } else if ((status & TWI_APIF_bm) != 0U) {
+        if ((status & TWI_AP_bm) == 0U) {
+            /* STOP: complete the previous transaction. */
+            i2c_tx_started = 0U;
+            TWI0.SCTRLB = TWI_SCMD_COMPTRANS_gc;
+        } else {
+            /* Address match: acknowledge it. Data handling follows in DIF. */
+            i2c_tx_started = 0U;
+            TWI0.SCTRLB = TWI_ACKACT_ACK_gc | TWI_SCMD_RESPONSE_gc;
+        }
     }
 }
 
@@ -245,6 +392,7 @@ int main(void)
     clock_init();
     gpio_init();
     usart0_init();
+    i2c_init();
     timer_init();
     sei();
 
