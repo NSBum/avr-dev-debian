@@ -12,11 +12,11 @@ AVRDUDE_PART := t3217
 
 CFLAGS := -mmcu=$(MCU) -DF_CPU=$(F_CPU) -Os -std=gnu11 \
            -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
-           -MMD -MP -Iinclude
+           -MMD -MP -Iinclude -I../../tinyavr1-libraries/twi-slave
 LDFLAGS := -mmcu=$(MCU) -Wl,--gc-sections
 
-SOURCES := src/main.c
-OBJECTS := $(SOURCES:src/%.c=$(BUILD_DIR)/%.o)
+SOURCES := src/main.c ../../tinyavr1-libraries/twi-slave/tinyavr1_twi_slave.c
+OBJECTS := $(BUILD_DIR)/main.o $(BUILD_DIR)/tinyavr1_twi_slave.o
 DEPS    := $(OBJECTS:.o=.d)
 ELF     := $(BUILD_DIR)/$(TARGET).elf
 HEX     := $(BUILD_DIR)/$(TARGET).hex
@@ -30,6 +30,9 @@ $(BUILD_DIR):
 
 $(BUILD_DIR)/%.o: src/%.c | $(BUILD_DIR)
 	mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/tinyavr1_twi_slave.o: ../../tinyavr1-libraries/twi-slave/tinyavr1_twi_slave.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(ELF): $(OBJECTS)

@@ -6,6 +6,7 @@
 
 #include "board.h"
 #include "config.h"
+#include "tinyavr1_twi_slave.h"
 
 enum target_mode {
     TARGET_NONE = 0,
@@ -27,9 +28,6 @@ static volatile uint8_t latest_raw_state;
 static volatile uint16_t latest_distance_cm;
 static volatile uint16_t latest_moving_distance_cm;
 static volatile uint16_t latest_stationary_distance_cm;
-static volatile uint8_t i2c_register;
-static volatile uint8_t i2c_tx_started;
-
 static void clock_init(void)
 {
     /* FUSE.OSCCFG must select OSC20M. */
@@ -55,22 +53,15 @@ static void usart0_init(void)
     USART0.CTRLA = USART_RXCIE_bm;
 }
 
-static void i2c_init(void)
+static uint8_t i2c_address_init(void)
 {
-    uint8_t address = (uint8_t)(I2C_BASE_ADDRESS |
-                                ((I2C_ADDRESS_PORT.IN &
-                                  I2C_ADDRESS_A0_PIN) != 0U ? 0x01U : 0U) |
-                                ((I2C_ADDRESS_PORT.IN &
-                                  I2C_ADDRESS_A1_PIN) != 0U ? 0x02U : 0U));
-
-    PORTMUX.CTRLB &= (uint8_t)~PORTMUX_TWI0_bm;
-    I2C_PORT.DIRCLR = I2C_SDA_PIN | I2C_SCL_PIN;
     I2C_ADDRESS_PORT.DIRCLR = I2C_ADDRESS_A0_PIN | I2C_ADDRESS_A1_PIN;
 
-    TWI0.SADDR = (uint8_t)(address << 1U);
-    TWI0.SADDRMASK = 0U;
-    TWI0.SCTRLA = TWI_APIEN_bm | TWI_DIEN_bm | TWI_PIEN_bm |
-                  TWI_ENABLE_bm;
+    return (uint8_t)(I2C_BASE_ADDRESS |
+                     ((I2C_ADDRESS_PORT.IN & I2C_ADDRESS_A0_PIN) != 0U ?
+                      0x01U : 0U) |
+                     ((I2C_ADDRESS_PORT.IN & I2C_ADDRESS_A1_PIN) != 0U ?
+                      0x02U : 0U));
 }
 
 static void timer_init(void)
@@ -209,7 +200,7 @@ static void update_radar_snapshot(uint8_t raw_state,
     }
 }
 
-static uint8_t i2c_register_value(uint8_t reg)
+static uint8_t i2c_read_register(uint8_t reg)
 {
     switch (reg) {
     case 0x00U:
@@ -317,43 +308,6 @@ static void process_report_byte(uint8_t value)
     }
 }
 
-ISR(TWI0_TWIS_vect)
-{
-    uint8_t status = TWI0.SSTATUS;
-
-    /* When address and data flags are both pending, service DIF first so
-       the first byte of a read is loaded before releasing the clock. */
-    if ((status & TWI_DIF_bm) != 0U) {
-        if ((status & TWI_DIR_bm) == 0U) {
-            /* Register pointer write; additional writes are ignored. */
-            i2c_register = TWI0.SDATA;
-            i2c_tx_started = 0U;
-            TWI0.SCTRLB = TWI_ACKACT_ACK_gc | TWI_SCMD_RESPONSE_gc;
-        } else if (i2c_tx_started == 0U) {
-            /* RXACK is not valid until after the first byte is sent. */
-            TWI0.SDATA = i2c_register_value(i2c_register);
-            i2c_tx_started = 1U;
-            TWI0.SCTRLB = TWI_ACKACT_ACK_gc | TWI_SCMD_RESPONSE_gc;
-        } else if ((status & TWI_RXACK_bm) == 0U) {
-            ++i2c_register;
-            TWI0.SDATA = i2c_register_value(i2c_register);
-            TWI0.SCTRLB = TWI_ACKACT_ACK_gc | TWI_SCMD_RESPONSE_gc;
-        } else {
-            TWI0.SCTRLB = TWI_SCMD_COMPTRANS_gc;
-        }
-    } else if ((status & TWI_APIF_bm) != 0U) {
-        if ((status & TWI_AP_bm) == 0U) {
-            /* STOP: complete the previous transaction. */
-            i2c_tx_started = 0U;
-            TWI0.SCTRLB = TWI_SCMD_COMPTRANS_gc;
-        } else {
-            /* Address match: acknowledge it. Data handling follows in DIF. */
-            i2c_tx_started = 0U;
-            TWI0.SCTRLB = TWI_ACKACT_ACK_gc | TWI_SCMD_RESPONSE_gc;
-        }
-    }
-}
-
 ISR(USART0_RXC_vect)
 {
     uint8_t status = USART0.RXDATAH;
@@ -388,11 +342,13 @@ ISR(TCB0_INT_vect)
 int main(void)
 {
     uint8_t value;
+    uint8_t i2c_address;
 
     clock_init();
     gpio_init();
     usart0_init();
-    i2c_init();
+    i2c_address = i2c_address_init();
+    tinyavr1_twi_slave_init(i2c_address, i2c_read_register, 0);
     timer_init();
     sei();
 
