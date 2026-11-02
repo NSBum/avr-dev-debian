@@ -117,11 +117,3 @@ Interpret analyzer results carefully:
   the flashed client is not the device on the observed bus.
 - Fixed diagnostic byte works but application register reads fail: the
   register-pointer or application snapshot logic is broken.
-
-## Application status semantics
-
-Separate raw sensor state from application-qualified state. If the
-application requirement is “target within 0–100 cm,” the status register must
-be `not detected` when both moving and stationary distances exceed 100 cm,
-even if the radar’s raw state reports a target farther away. Expose raw state
-and raw distances separately when they are useful for diagnostics.
