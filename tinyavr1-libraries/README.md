@@ -11,3 +11,7 @@ choose their source files and provide device- or board-specific callbacks.
   default tinyAVR 1-series route.
 - [`ld2410c/`](ld2410c/): streaming LD2410C report-frame parser independent of
   the application USART driver.
+- [`software-uart/`](software-uart/): pin-configurable cooperative 8-N-1
+  software UART for occasional low-speed serial devices.
+- [`dfplayer/`](dfplayer/): DFPlayer Mini command/response protocol with
+  software-UART and polling-hardware-USART transports.

@@ -20,4 +20,11 @@
 #define I2C_ADDRESS_A0_PIN PIN4_bm
 #define I2C_ADDRESS_A1_PIN PIN5_bm
 
+/* Test-only DFPlayer software UART and BUSY input. */
+#define DFPLAYER_UART_PORT PORTA
+#define DFPLAYER_TX_PIN    PIN5_bm
+#define DFPLAYER_RX_PIN    PIN6_bm
+#define DFPLAYER_BUSY_PORT PORTA
+#define DFPLAYER_BUSY_PIN  PIN7_bm
+
 #endif

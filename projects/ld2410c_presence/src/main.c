@@ -6,6 +6,11 @@
 
 #include "board.h"
 #include "config.h"
+#if DFPLAYER_TEST_ENABLE != 0U
+#include "tinyavr1_dfplayer.h"
+#include "tinyavr1_dfplayer_soft_uart.h"
+#include "tinyavr1_soft_uart.h"
+#endif
 #include "tinyavr1_ld2410c.h"
 #include "tinyavr1_twi_slave.h"
 
@@ -30,6 +35,11 @@ static volatile uint16_t latest_distance_cm;
 static volatile uint16_t latest_moving_distance_cm;
 static volatile uint16_t latest_stationary_distance_cm;
 static tinyavr1_ld2410c_parser_t radar_parser;
+
+#if DFPLAYER_TEST_ENABLE != 0U
+static tinyavr1_soft_uart_t dfplayer_serial;
+static tinyavr1_dfplayer_t dfplayer;
+#endif
 static void clock_init(void)
 {
     /* FUSE.OSCCFG must select OSC20M. */
@@ -41,6 +51,9 @@ static void gpio_init(void)
 {
     INDICATOR_PORT.OUTCLR = INDICATOR_PIN;
     INDICATOR_PORT.DIRSET = INDICATOR_PIN;
+#if DFPLAYER_TEST_ENABLE != 0U
+    DFPLAYER_BUSY_PORT.DIRCLR = DFPLAYER_BUSY_PIN;
+#endif
 }
 
 static void usart0_init(void)
@@ -182,6 +195,10 @@ static uint8_t i2c_read_register(uint8_t reg)
 static void radar_report_received(const tinyavr1_ld2410c_report_t *report)
 {
     static enum target_mode current_mode = TARGET_NONE;
+#if DFPLAYER_TEST_ENABLE != 0U
+    static uint8_t sequence_stage;
+    static uint8_t next_track = DFPLAYER_TEST_TRACK_1;
+#endif
     enum target_mode mode = TARGET_NONE;
 
     update_radar_snapshot(report->target_state,
@@ -202,6 +219,30 @@ static void radar_report_received(const tinyavr1_ld2410c_report_t *report)
         set_blink_mode(mode);
         current_mode = mode;
     }
+
+#if DFPLAYER_TEST_ENABLE != 0U
+    /* Test sequence: moving -> stationary -> all clear. */
+    if (mode == TARGET_MOVING) {
+        if (sequence_stage == 0U) {
+            sequence_stage = 1U;
+        } else if (sequence_stage == 2U) {
+            sequence_stage = 1U;
+        }
+    } else if (mode == TARGET_STATIONARY) {
+        if (sequence_stage == 1U) {
+            sequence_stage = 2U;
+        }
+    } else if ((mode == TARGET_NONE) && (sequence_stage == 2U)) {
+        /* BUSY is active low. Do not interrupt a track during the test. */
+        if ((DFPLAYER_BUSY_PORT.IN & DFPLAYER_BUSY_PIN) != 0U) {
+            (void)tinyavr1_dfplayer_play_folder_file(&dfplayer, 1U,
+                                                      next_track);
+            next_track = (next_track == DFPLAYER_TEST_TRACK_1) ?
+                         DFPLAYER_TEST_TRACK_2 : DFPLAYER_TEST_TRACK_1;
+        }
+        sequence_stage = 0U;
+    }
+#endif
 }
 
 ISR(USART0_RXC_vect)
@@ -246,6 +287,14 @@ int main(void)
     i2c_address = i2c_address_init();
     tinyavr1_twi_slave_init(i2c_address, i2c_read_register, 0);
     tinyavr1_ld2410c_init(&radar_parser, radar_report_received);
+#if DFPLAYER_TEST_ENABLE != 0U
+    tinyavr1_soft_uart_init(&dfplayer_serial,
+                            &DFPLAYER_UART_PORT, DFPLAYER_TX_PIN,
+                            &DFPLAYER_UART_PORT, DFPLAYER_RX_PIN);
+    tinyavr1_dfplayer_init(
+        &dfplayer,
+        tinyavr1_dfplayer_transport_soft_uart(&dfplayer_serial));
+#endif
     timer_init();
     sei();
 
