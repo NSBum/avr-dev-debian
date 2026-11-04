@@ -126,9 +126,19 @@ tinyavr1_dfplayer_result_t tinyavr1_dfplayer_play_folder_file(
     uint8_t folder,
     uint8_t file)
 {
+    return tinyavr1_dfplayer_play_folder_file_feedback(player, folder, file,
+                                                       0U);
+}
+
+tinyavr1_dfplayer_result_t tinyavr1_dfplayer_play_folder_file_feedback(
+    const tinyavr1_dfplayer_t *player,
+    uint8_t folder,
+    uint8_t file,
+    uint8_t request_feedback)
+{
     return tinyavr1_dfplayer_send_command(
         player, DFPLAYER_CMD_PLAY_FOLDER_FILE,
-        ((uint16_t)folder << 8U) | file, 0U);
+        ((uint16_t)folder << 8U) | file, request_feedback);
 }
 
 tinyavr1_dfplayer_result_t tinyavr1_dfplayer_next(

@@ -58,6 +58,11 @@ tinyavr1_dfplayer_result_t tinyavr1_dfplayer_play_folder_file(
     const tinyavr1_dfplayer_t *player,
     uint8_t folder,
     uint8_t file);
+tinyavr1_dfplayer_result_t tinyavr1_dfplayer_play_folder_file_feedback(
+    const tinyavr1_dfplayer_t *player,
+    uint8_t folder,
+    uint8_t file,
+    uint8_t request_feedback);
 tinyavr1_dfplayer_result_t tinyavr1_dfplayer_next(
     const tinyavr1_dfplayer_t *player);
 tinyavr1_dfplayer_result_t tinyavr1_dfplayer_previous(
