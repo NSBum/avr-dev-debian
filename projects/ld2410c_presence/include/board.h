@@ -3,6 +3,7 @@
 
 #include <avr/io.h>
 
+/* PA4 is used only for DFPlayer serial-status diagnostics in this build. */
 #define INDICATOR_PORT PORTA
 #define INDICATOR_PIN  PIN4_bm
 

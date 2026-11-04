@@ -3,7 +3,8 @@
 - Target: Microchip ATtiny3217, 24-pin package.
 - Clock: internal OSC20M, nominal 20 MHz. `FUSE.OSCCFG` must select 20 MHz;
   firmware disables the main clock prescaler. No clock fuse is changed.
-- Indicator: PA4, active-high LED or other suitable load.
+- Test status indicator: PA4, active-high LED or other suitable load. One
+  flash indicates a valid DFPlayer ACK; three flashes indicate failure.
 - USART0 default route: PB2/TXD and PB3/RXD. The firmware uses PB3/RXD;
   PB2/TXD is left unused.
 - I2C/TWI0 default route: PB1/SDA and PB0/SCL. Provide external pull-up
@@ -18,11 +19,16 @@
 - Serial format: 256000 baud, 8 data bits, no parity, 1 stop bit (8-N-1).
 - Programming: Atmel-ICE using UPDI, AVRDUDE programmer `atmelice_updi`,
   target part `t3217`. PA0/UPDI remains reserved.
+- DFPlayer test: PA5 is software-UART TX to DFPlayer RX, PA6 is software-UART
+  RX from DFPlayer TX, and PA7 is the active-low DFPlayer BUSY input. Use
+  appropriate 3.3 V/5 V level translation and connect grounds together.
 
 The application consumes the LD2410C normal or engineering report stream and
 does not send configuration commands. Target distances are compared in cm;
 the 0--1 m boundary is inclusive at 100 cm. If both moving and stationary
-targets are reported within range, moving indication takes priority.
+targets are reported within range, moving indication has priority for the
+sequence state. The DFPlayer test sends feedback-requested commands after the
+motion -> stationary -> undetected sequence.
 
 ## I2C register map
 

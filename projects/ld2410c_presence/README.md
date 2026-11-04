@@ -1,13 +1,15 @@
 # LD2410C presence indicator
 
 Bare-metal ATtiny3217 firmware that reads the LD2410C radar report stream on
-USART0 and drives an active-high indicator on PA4.
+USART0 and tests DFPlayer playback through the reusable software-UART and
+DFPlayer libraries.
 
 Behavior:
 
-- Moving target within 0--100 cm: PA4 flashes with a 200 ms full cycle.
-- Stationary target within 0--100 cm: PA4 flashes with a 1 second full cycle.
-- No qualifying target: PA4 is low.
+- Moving, then stationary, then no qualifying target: play the next test file
+  from folder `01`, alternating between `001.mp3` and `002.mp3`.
+- PA4 flashes once for a valid DFPlayer ACK and three times for a serial or
+  protocol failure.
 
 The default LD2410C report format is parsed as a streaming binary protocol.
 The basic report payload contains target state, moving distance, and
@@ -22,6 +24,16 @@ range is `0x30` through `0x33`. PC4 and PC5 require external pulldowns when
 their high state is selected.
 
 The read-only register map is documented in [`hardware.md`](hardware.md).
+
+## DFPlayer test wiring
+
+- PA5: software UART TX to DFPlayer RX
+- PA6: software UART RX from DFPlayer TX
+- PA7: DFPlayer BUSY input
+- PA4: DFPlayer serial-status indicator
+
+The test feature is controlled by `DFPLAYER_TEST_ENABLE` in
+[`include/config.h`](include/config.h).
 
 ## Build
 

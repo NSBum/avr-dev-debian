@@ -29,10 +29,6 @@ static volatile uint8_t rx_buffer[RADAR_RX_BUFFER_SIZE];
 static volatile uint8_t rx_head;
 static volatile uint8_t rx_tail;
 
-static volatile uint8_t blink_active;
-static volatile uint16_t blink_half_period_ms;
-static volatile uint16_t blink_elapsed_ms;
-
 /* The main loop is the only writer. TWI0 reads these in its ISR. */
 static volatile uint8_t latest_status;
 static volatile uint8_t latest_raw_state;
@@ -44,8 +40,6 @@ static tinyavr1_ld2410c_parser_t radar_parser;
 #if DFPLAYER_TEST_ENABLE != 0U
 static tinyavr1_soft_uart_t dfplayer_serial;
 static tinyavr1_dfplayer_t dfplayer;
-static volatile uint16_t dfplayer_test_elapsed_ms;
-static volatile uint8_t dfplayer_test_due;
 #endif
 static void clock_init(void)
 {
@@ -86,17 +80,6 @@ static uint8_t i2c_address_init(void)
                       0x02U : 0U));
 }
 
-static void timer_init(void)
-{
-    TCB0.CTRLA = 0;
-    TCB0.CTRLB = TCB_CNTMODE_INT_gc;
-    /* CLK_PER/2 = 10 MHz; 10,000 ticks = 1 ms. */
-    TCB0.CCMP = 9999U;
-    TCB0.INTFLAGS = TCB_CAPT_bm;
-    TCB0.INTCTRL = TCB_CAPT_bm;
-    TCB0.CTRLA = TCB_CLKSEL_CLKDIV2_gc | TCB_ENABLE_bm;
-}
-
 static uint8_t rx_read(uint8_t *value)
 {
     uint8_t available = 0U;
@@ -110,31 +93,6 @@ static uint8_t rx_read(uint8_t *value)
     }
 
     return available;
-}
-
-static void set_blink_mode(enum target_mode mode)
-{
-    uint16_t full_period_ms;
-
-    if (mode == TARGET_MOVING) {
-        full_period_ms = MOVING_BLINK_PERIOD_MS;
-    } else if (mode == TARGET_STATIONARY) {
-        full_period_ms = STATIONARY_BLINK_PERIOD_MS;
-    } else {
-        ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-            blink_active = 0U;
-            INDICATOR_PORT.OUTCLR = INDICATOR_PIN;
-        }
-        return;
-    }
-
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-        /* Start each state transition with a deterministic low phase. */
-        INDICATOR_PORT.OUTCLR = INDICATOR_PIN;
-        blink_half_period_ms = (uint16_t)(full_period_ms / 2U);
-        blink_elapsed_ms = 0U;
-        blink_active = 1U;
-    }
 }
 
 static uint8_t status_for_state(uint8_t raw_state,
@@ -175,15 +133,12 @@ static void update_radar_snapshot(uint8_t raw_state,
     }
 }
 
-#if DFPLAYER_TEST_ENABLE != 0U && DFPLAYER_TEST_PERIODIC_ENABLE != 0U
+#if DFPLAYER_TEST_ENABLE != 0U
 static void flash_dfplayer_error(void)
 {
     uint8_t flash;
 
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-        blink_active = 0U;
-        INDICATOR_PORT.OUTCLR = INDICATOR_PIN;
-    }
+    INDICATOR_PORT.OUTCLR = INDICATOR_PIN;
 
     for (flash = 0U; flash < 3U; ++flash) {
         INDICATOR_PORT.OUTSET = INDICATOR_PIN;
@@ -193,24 +148,33 @@ static void flash_dfplayer_error(void)
     }
 }
 
-static void run_dfplayer_periodic_test(void)
+static void flash_dfplayer_success(void)
+{
+    INDICATOR_PORT.OUTSET = INDICATOR_PIN;
+    _delay_ms(100);
+    INDICATOR_PORT.OUTCLR = INDICATOR_PIN;
+}
+
+static void run_dfplayer_playback_test(uint8_t track)
 {
     tinyavr1_dfplayer_response_t response;
     tinyavr1_dfplayer_result_t result;
 
     result = tinyavr1_dfplayer_play_folder_file_feedback(
-        &dfplayer, 1U, DFPLAYER_TEST_TRACK_1, 1U);
+        &dfplayer, 1U, track, 1U);
     if (result == TINYAVR1_DFPLAYER_OK) {
         result = tinyavr1_dfplayer_read_response(
             &dfplayer, &response, DFPLAYER_TEST_RESPONSE_TIMEOUT_MS);
         if ((result == TINYAVR1_DFPLAYER_OK) &&
-            (response.command == 0x40U)) {
+            (response.command != 0x41U)) {
             result = TINYAVR1_DFPLAYER_TRANSPORT_ERROR;
         }
     }
 
     if (result != TINYAVR1_DFPLAYER_OK) {
         flash_dfplayer_error();
+    } else {
+        flash_dfplayer_success();
     }
 }
 #endif
@@ -241,8 +205,7 @@ static uint8_t i2c_read_register(uint8_t reg)
 
 static void radar_report_received(const tinyavr1_ld2410c_report_t *report)
 {
-    static enum target_mode current_mode = TARGET_NONE;
-#if DFPLAYER_TEST_ENABLE != 0U && DFPLAYER_TEST_PERIODIC_ENABLE == 0U
+#if DFPLAYER_TEST_ENABLE != 0U
     static uint8_t sequence_stage;
     static uint8_t next_track = DFPLAYER_TEST_TRACK_1;
 #endif
@@ -262,12 +225,7 @@ static void radar_report_received(const tinyavr1_ld2410c_report_t *report)
         mode = TARGET_STATIONARY;
     }
 
-    if (mode != current_mode) {
-        set_blink_mode(mode);
-        current_mode = mode;
-    }
-
-#if DFPLAYER_TEST_ENABLE != 0U && DFPLAYER_TEST_PERIODIC_ENABLE == 0U
+#if DFPLAYER_TEST_ENABLE != 0U
     /* Test sequence: moving -> stationary -> all clear. */
     if (mode == TARGET_MOVING) {
         if (sequence_stage == 0U) {
@@ -280,13 +238,9 @@ static void radar_report_received(const tinyavr1_ld2410c_report_t *report)
             sequence_stage = 2U;
         }
     } else if ((mode == TARGET_NONE) && (sequence_stage == 2U)) {
-        /* BUSY is active low. Do not interrupt a track during the test. */
-        if ((DFPLAYER_BUSY_PORT.IN & DFPLAYER_BUSY_PIN) != 0U) {
-            (void)tinyavr1_dfplayer_play_folder_file(&dfplayer, 1U,
-                                                      next_track);
-            next_track = (next_track == DFPLAYER_TEST_TRACK_1) ?
-                         DFPLAYER_TEST_TRACK_2 : DFPLAYER_TEST_TRACK_1;
-        }
+        run_dfplayer_playback_test(next_track);
+        next_track = (next_track == DFPLAYER_TEST_TRACK_1) ?
+                     DFPLAYER_TEST_TRACK_2 : DFPLAYER_TEST_TRACK_1;
         sequence_stage = 0U;
     }
 #endif
@@ -310,26 +264,6 @@ ISR(USART0_RXC_vect)
     rx_head = next;
 }
 
-ISR(TCB0_INT_vect)
-{
-    TCB0.INTFLAGS = TCB_CAPT_bm;
-
-    if (blink_active != 0U) {
-        ++blink_elapsed_ms;
-        if (blink_elapsed_ms >= blink_half_period_ms) {
-            blink_elapsed_ms = 0U;
-            INDICATOR_PORT.OUTTGL = INDICATOR_PIN;
-        }
-    }
-#if DFPLAYER_TEST_ENABLE != 0U && DFPLAYER_TEST_PERIODIC_ENABLE != 0U
-    if (dfplayer_test_elapsed_ms < DFPLAYER_TEST_INTERVAL_MS) {
-        ++dfplayer_test_elapsed_ms;
-    } else {
-        dfplayer_test_due = 1U;
-    }
-#endif
-}
-
 int main(void)
 {
     uint8_t value;
@@ -349,21 +283,11 @@ int main(void)
         &dfplayer,
         tinyavr1_dfplayer_transport_soft_uart(&dfplayer_serial));
 #endif
-    timer_init();
     sei();
 
     for (;;) {
         if (rx_read(&value) != 0U) {
             tinyavr1_ld2410c_receive_byte(&radar_parser, value);
         }
-#if DFPLAYER_TEST_ENABLE != 0U && DFPLAYER_TEST_PERIODIC_ENABLE != 0U
-        if (dfplayer_test_due != 0U) {
-            ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-                dfplayer_test_due = 0U;
-                dfplayer_test_elapsed_ms = 0U;
-            }
-            run_dfplayer_periodic_test();
-        }
-#endif
     }
 }
