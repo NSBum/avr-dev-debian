@@ -3,10 +3,6 @@
 
 #include <avr/io.h>
 
-/* PA4 is used only for DFPlayer serial-status diagnostics in this build. */
-#define INDICATOR_PORT PORTA
-#define INDICATOR_PIN  PIN4_bm
-
 /* USART0 default route on the ATtiny3217. */
 #define RADAR_RX_PORT PORTB
 #define RADAR_RX_PIN  PIN3_bm
@@ -21,7 +17,7 @@
 #define I2C_ADDRESS_A0_PIN PIN4_bm
 #define I2C_ADDRESS_A1_PIN PIN5_bm
 
-/* Test-only DFPlayer software UART and BUSY input. */
+/* DFPlayer software UART and BUSY input. */
 #define DFPLAYER_UART_PORT PORTA
 #define DFPLAYER_TX_PIN    PIN5_bm
 #define DFPLAYER_RX_PIN    PIN6_bm

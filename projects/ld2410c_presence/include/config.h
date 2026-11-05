@@ -5,7 +5,6 @@
 
 #define RADAR_BAUD             256000UL
 #define RADAR_RX_BUFFER_SIZE   128U
-#define TARGET_RANGE_CM        100U
 #define I2C_BASE_ADDRESS       0x30U
 
 #define DFPLAYER_BAUD          9600UL

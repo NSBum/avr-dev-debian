@@ -3,8 +3,6 @@
 - Target: Microchip ATtiny3217, 24-pin package.
 - Clock: internal OSC20M, nominal 20 MHz. `FUSE.OSCCFG` must select 20 MHz;
   firmware disables the main clock prescaler. No clock fuse is changed.
-- Diagnostic indicator: PA4, active-high LED or other suitable load; currently
-  reserved.
 - USART0 default route: PB2/TXD and PB3/RXD. The firmware uses PB3/RXD;
   PB2/TXD is left unused.
 - I2C/TWI0 default route: PB1/SDA and PB0/SCL. Provide external pull-up

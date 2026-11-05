@@ -31,7 +31,6 @@ convenience wrappers.
 - PA5: software UART TX to DFPlayer RX
 - PA6: software UART RX from DFPlayer TX
 - PA7: DFPlayer BUSY input
-- PA4: reserved diagnostic indicator
 
 ## Build
 

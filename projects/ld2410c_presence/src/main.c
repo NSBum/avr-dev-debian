@@ -7,6 +7,7 @@
 #include "board.h"
 #include "config.h"
 
+#define TINYAVR1_SOFT_UART_BAUD DFPLAYER_BAUD
 #include "tinyavr1_dfplayer.h"
 #include "tinyavr1_dfplayer_soft_uart.h"
 #include "tinyavr1_soft_uart.h"
@@ -17,7 +18,7 @@ static volatile uint8_t rx_buffer[RADAR_RX_BUFFER_SIZE];
 static volatile uint8_t rx_head;
 static volatile uint8_t rx_tail;
 
-/* The main loop is the only writer. TWI0 reads these in its ISR. */
+/* The main loop is the only writer. TWI0 reads these radar values in its ISR. */
 static volatile uint8_t latest_status;
 static volatile uint8_t latest_raw_state;
 static volatile uint16_t latest_distance_cm;
@@ -45,6 +46,7 @@ static volatile uint8_t df_response_feedback;
 static volatile uint8_t df_response_hi;
 static volatile uint8_t df_response_lo;
 static volatile uint8_t df_rejected;
+
 static void clock_init(void)
 {
     /* FUSE.OSCCFG must select OSC20M. */
@@ -54,8 +56,6 @@ static void clock_init(void)
 
 static void gpio_init(void)
 {
-    INDICATOR_PORT.OUTCLR = INDICATOR_PIN;
-    INDICATOR_PORT.DIRSET = INDICATOR_PIN;
     DFPLAYER_BUSY_PORT.DIRCLR = DFPLAYER_BUSY_PIN;
 }
 
