@@ -7,23 +7,11 @@
 #include "board.h"
 #include "config.h"
 
-#if DFPLAYER_TEST_ENABLE != 0U
-#include <util/delay.h>
-#endif
-
-#if DFPLAYER_TEST_ENABLE != 0U
 #include "tinyavr1_dfplayer.h"
 #include "tinyavr1_dfplayer_soft_uart.h"
 #include "tinyavr1_soft_uart.h"
-#endif
 #include "tinyavr1_ld2410c.h"
 #include "tinyavr1_twi_slave.h"
-
-enum target_mode {
-    TARGET_NONE = 0,
-    TARGET_MOVING,
-    TARGET_STATIONARY
-};
 
 static volatile uint8_t rx_buffer[RADAR_RX_BUFFER_SIZE];
 static volatile uint8_t rx_head;
@@ -37,10 +25,26 @@ static volatile uint16_t latest_moving_distance_cm;
 static volatile uint16_t latest_stationary_distance_cm;
 static tinyavr1_ld2410c_parser_t radar_parser;
 
-#if DFPLAYER_TEST_ENABLE != 0U
 static tinyavr1_soft_uart_t dfplayer_serial;
 static tinyavr1_dfplayer_t dfplayer;
-#endif
+
+/* TWI callbacks only stage bytes. DFPlayer I/O is performed by main(). */
+static volatile uint8_t df_command;
+static volatile uint8_t df_feedback;
+static volatile uint8_t df_parameter_hi;
+static volatile uint8_t df_parameter_lo;
+static volatile uint8_t df_track_hi;
+static volatile uint8_t df_track_lo;
+static volatile uint8_t df_folder;
+static volatile uint8_t df_file;
+static volatile uint8_t df_pending;
+static volatile uint8_t df_status;
+static volatile uint8_t df_result;
+static volatile uint8_t df_response_command;
+static volatile uint8_t df_response_feedback;
+static volatile uint8_t df_response_hi;
+static volatile uint8_t df_response_lo;
+static volatile uint8_t df_rejected;
 static void clock_init(void)
 {
     /* FUSE.OSCCFG must select OSC20M. */
@@ -52,9 +56,7 @@ static void gpio_init(void)
 {
     INDICATOR_PORT.OUTCLR = INDICATOR_PIN;
     INDICATOR_PORT.DIRSET = INDICATOR_PIN;
-#if DFPLAYER_TEST_ENABLE != 0U
     DFPLAYER_BUSY_PORT.DIRCLR = DFPLAYER_BUSY_PIN;
-#endif
 }
 
 static void usart0_init(void)
@@ -133,52 +135,6 @@ static void update_radar_snapshot(uint8_t raw_state,
     }
 }
 
-#if DFPLAYER_TEST_ENABLE != 0U
-static void flash_dfplayer_error(void)
-{
-    uint8_t flash;
-
-    INDICATOR_PORT.OUTCLR = INDICATOR_PIN;
-
-    for (flash = 0U; flash < 3U; ++flash) {
-        INDICATOR_PORT.OUTSET = INDICATOR_PIN;
-        _delay_ms(100);
-        INDICATOR_PORT.OUTCLR = INDICATOR_PIN;
-        _delay_ms(100);
-    }
-}
-
-static void flash_dfplayer_success(void)
-{
-    INDICATOR_PORT.OUTSET = INDICATOR_PIN;
-    _delay_ms(100);
-    INDICATOR_PORT.OUTCLR = INDICATOR_PIN;
-}
-
-static void run_dfplayer_playback_test(uint8_t track)
-{
-    tinyavr1_dfplayer_response_t response;
-    tinyavr1_dfplayer_result_t result;
-
-    result = tinyavr1_dfplayer_play_folder_file_feedback(
-        &dfplayer, 1U, track, 1U);
-    if (result == TINYAVR1_DFPLAYER_OK) {
-        result = tinyavr1_dfplayer_read_response(
-            &dfplayer, &response, DFPLAYER_TEST_RESPONSE_TIMEOUT_MS);
-        if ((result == TINYAVR1_DFPLAYER_OK) &&
-            (response.command != 0x41U)) {
-            result = TINYAVR1_DFPLAYER_TRANSPORT_ERROR;
-        }
-    }
-
-    if (result != TINYAVR1_DFPLAYER_OK) {
-        flash_dfplayer_error();
-    } else {
-        flash_dfplayer_success();
-    }
-}
-#endif
-
 static uint8_t i2c_read_register(uint8_t reg)
 {
     switch (reg) {
@@ -198,52 +154,155 @@ static uint8_t i2c_read_register(uint8_t reg)
         return (uint8_t)(latest_stationary_distance_cm >> 8U);
     case 0x07U:
         return latest_raw_state;
+    case DFPLAYER_REG_STATUS:
+        return df_status;
+    case DFPLAYER_REG_RESULT:
+        return df_result;
+    case DFPLAYER_REG_RESPONSE_CMD:
+        return df_response_command;
+    case DFPLAYER_REG_RESPONSE_FB:
+        return df_response_feedback;
+    case DFPLAYER_REG_RESPONSE_HI:
+        return df_response_hi;
+    case DFPLAYER_REG_RESPONSE_LO:
+        return df_response_lo;
+    case DFPLAYER_REG_BUSY:
+        return (DFPLAYER_BUSY_PORT.IN & DFPLAYER_BUSY_PIN) != 0U ? 0U : 1U;
+    case DFPLAYER_REG_REJECTED:
+        return df_rejected;
     default:
         return 0U;
     }
 }
 
+static void dfplayer_queue(uint8_t command, uint16_t parameter,
+                           uint8_t feedback)
+{
+    if (df_pending != 0U) {
+        ++df_rejected;
+        df_result = TINYAVR1_DFPLAYER_TRANSPORT_ERROR;
+        return;
+    }
+
+    df_command = command;
+    df_parameter_hi = (uint8_t)(parameter >> 8U);
+    df_parameter_lo = (uint8_t)parameter;
+    df_feedback = feedback != 0U ? 1U : 0U;
+    df_status = 1U;
+    df_pending = 1U;
+}
+
+static void i2c_write_register(uint8_t reg, uint8_t value)
+{
+    switch (reg) {
+    case DFPLAYER_REG_COMMAND:
+        df_command = value;
+        break;
+    case DFPLAYER_REG_FEEDBACK:
+        df_feedback = value != 0U ? 1U : 0U;
+        break;
+    case DFPLAYER_REG_PARAMETER_HI:
+        df_parameter_hi = value;
+        break;
+    case DFPLAYER_REG_PARAMETER_LO:
+        df_parameter_lo = value;
+        break;
+    case DFPLAYER_REG_EXECUTE:
+        if (value != 0U) {
+            dfplayer_queue(df_command,
+                           ((uint16_t)df_parameter_hi << 8U) |
+                           df_parameter_lo, df_feedback);
+        }
+        break;
+    case DFPLAYER_REG_TRACK_HI:
+        df_track_hi = value;
+        break;
+    case DFPLAYER_REG_TRACK_LO:
+        df_track_lo = value;
+        break;
+    case DFPLAYER_REG_PLAY_TRACK:
+        if (value != 0U) {
+            dfplayer_queue(0x03U,
+                           ((uint16_t)df_track_hi << 8U) | df_track_lo, 0U);
+        }
+        break;
+    case DFPLAYER_REG_FOLDER:
+        df_folder = value;
+        break;
+    case DFPLAYER_REG_FILE:
+        df_file = value;
+        break;
+    case DFPLAYER_REG_PLAY_FILE:
+        if (value != 0U) {
+            dfplayer_queue(0x0FU, ((uint16_t)df_folder << 8U) | df_file, 0U);
+        }
+        break;
+    case DFPLAYER_REG_VOLUME:
+        if (value <= 30U) {
+            dfplayer_queue(0x06U, value, 0U);
+        } else {
+            df_result = TINYAVR1_DFPLAYER_INVALID_ARGUMENT;
+            df_status = 5U;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+static void dfplayer_service(void)
+{
+    uint8_t command;
+    uint8_t feedback;
+    uint16_t parameter;
+    tinyavr1_dfplayer_result_t result;
+
+    if (df_pending == 0U) {
+        return;
+    }
+
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+        command = df_command;
+        feedback = df_feedback;
+        parameter = ((uint16_t)df_parameter_hi << 8U) | df_parameter_lo;
+        df_pending = 0U;
+    }
+
+    df_status = 2U;
+    result = tinyavr1_dfplayer_send_command(&dfplayer, command, parameter,
+                                            feedback);
+    if (result != TINYAVR1_DFPLAYER_OK) {
+        df_result = (uint8_t)result;
+        df_status = 5U;
+        return;
+    }
+
+    if (feedback == 0U) {
+        df_result = TINYAVR1_DFPLAYER_OK;
+        df_status = 3U;
+        return;
+    }
+
+    {
+        tinyavr1_dfplayer_response_t response;
+        result = tinyavr1_dfplayer_read_response(
+            &dfplayer, &response, DFPLAYER_RESPONSE_TIMEOUT_MS);
+        if (result == TINYAVR1_DFPLAYER_OK) {
+            df_response_command = response.command;
+            df_response_feedback = response.feedback;
+            df_response_hi = (uint8_t)(response.parameter >> 8U);
+            df_response_lo = (uint8_t)response.parameter;
+        }
+        df_result = (uint8_t)result;
+        df_status = result == TINYAVR1_DFPLAYER_OK ? 4U : 5U;
+    }
+}
+
 static void radar_report_received(const tinyavr1_ld2410c_report_t *report)
 {
-#if DFPLAYER_TEST_ENABLE != 0U
-    static uint8_t sequence_stage;
-    static uint8_t next_track = DFPLAYER_TEST_TRACK_1;
-#endif
-    enum target_mode mode = TARGET_NONE;
-
     update_radar_snapshot(report->target_state,
                            report->moving_distance_cm,
                            report->stationary_distance_cm);
-
-    if (((report->target_state == TINYAVR1_LD2410C_STATE_MOVING) ||
-         (report->target_state == TINYAVR1_LD2410C_STATE_BOTH)) &&
-        (report->moving_distance_cm <= TARGET_RANGE_CM)) {
-        mode = TARGET_MOVING;
-    } else if (((report->target_state == TINYAVR1_LD2410C_STATE_STATIONARY) ||
-                (report->target_state == TINYAVR1_LD2410C_STATE_BOTH)) &&
-               (report->stationary_distance_cm <= TARGET_RANGE_CM)) {
-        mode = TARGET_STATIONARY;
-    }
-
-#if DFPLAYER_TEST_ENABLE != 0U
-    /* Test sequence: moving -> stationary -> all clear. */
-    if (mode == TARGET_MOVING) {
-        if (sequence_stage == 0U) {
-            sequence_stage = 1U;
-        } else if (sequence_stage == 2U) {
-            sequence_stage = 1U;
-        }
-    } else if (mode == TARGET_STATIONARY) {
-        if (sequence_stage == 1U) {
-            sequence_stage = 2U;
-        }
-    } else if ((mode == TARGET_NONE) && (sequence_stage == 2U)) {
-        run_dfplayer_playback_test(next_track);
-        next_track = (next_track == DFPLAYER_TEST_TRACK_1) ?
-                     DFPLAYER_TEST_TRACK_2 : DFPLAYER_TEST_TRACK_1;
-        sequence_stage = 0U;
-    }
-#endif
 }
 
 ISR(USART0_RXC_vect)
@@ -273,19 +332,19 @@ int main(void)
     gpio_init();
     usart0_init();
     i2c_address = i2c_address_init();
-    tinyavr1_twi_slave_init(i2c_address, i2c_read_register, 0);
+    tinyavr1_twi_slave_init(i2c_address, i2c_read_register,
+                            i2c_write_register);
     tinyavr1_ld2410c_init(&radar_parser, radar_report_received);
-#if DFPLAYER_TEST_ENABLE != 0U
     tinyavr1_soft_uart_init(&dfplayer_serial,
                             &DFPLAYER_UART_PORT, DFPLAYER_TX_PIN,
                             &DFPLAYER_UART_PORT, DFPLAYER_RX_PIN);
     tinyavr1_dfplayer_init(
         &dfplayer,
         tinyavr1_dfplayer_transport_soft_uart(&dfplayer_serial));
-#endif
     sei();
 
     for (;;) {
+        dfplayer_service();
         if (rx_read(&value) != 0U) {
             tinyavr1_ld2410c_receive_byte(&radar_parser, value);
         }

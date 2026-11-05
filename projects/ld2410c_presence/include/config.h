@@ -8,12 +8,30 @@
 #define TARGET_RANGE_CM        100U
 #define I2C_BASE_ADDRESS       0x30U
 
-/* Test-only DFPlayer feature: set to 0 to compile it out. */
-#define DFPLAYER_TEST_ENABLE   1U
 #define DFPLAYER_BAUD          9600UL
-#define DFPLAYER_TEST_TRACK_1  1U
-#define DFPLAYER_TEST_TRACK_2  2U
-#define DFPLAYER_TEST_RESPONSE_TIMEOUT_MS 500U
+#define DFPLAYER_RESPONSE_TIMEOUT_MS 500U
+
+/* DFPlayer register protocol. Writes to EXECUTE are deferred to main(). */
+#define DFPLAYER_REG_COMMAND       0x10U
+#define DFPLAYER_REG_FEEDBACK      0x11U
+#define DFPLAYER_REG_PARAMETER_HI  0x12U
+#define DFPLAYER_REG_PARAMETER_LO  0x13U
+#define DFPLAYER_REG_EXECUTE       0x14U
+#define DFPLAYER_REG_TRACK_HI      0x20U
+#define DFPLAYER_REG_TRACK_LO      0x21U
+#define DFPLAYER_REG_PLAY_TRACK    0x22U
+#define DFPLAYER_REG_FOLDER        0x23U
+#define DFPLAYER_REG_FILE          0x24U
+#define DFPLAYER_REG_PLAY_FILE     0x25U
+#define DFPLAYER_REG_VOLUME        0x26U
+#define DFPLAYER_REG_STATUS        0x30U
+#define DFPLAYER_REG_RESULT        0x31U
+#define DFPLAYER_REG_RESPONSE_CMD  0x32U
+#define DFPLAYER_REG_RESPONSE_FB   0x33U
+#define DFPLAYER_REG_RESPONSE_HI   0x34U
+#define DFPLAYER_REG_RESPONSE_LO   0x35U
+#define DFPLAYER_REG_BUSY          0x36U
+#define DFPLAYER_REG_REJECTED      0x37U
 
 /* Normal async USART mode: BAUD = 4 * F_CPU / baud, rounded. */
 #define USART0_BAUD_VALUE \
