@@ -131,6 +131,48 @@ static uint8_t i2c_read_register(uint8_t reg, uint8_t *value)
     return 1U;
 }
 
+static uint8_t i2c_write_registers(uint8_t reg,
+                                   const uint8_t *data,
+                                   uint8_t length)
+{
+    uint16_t deadline = (uint16_t)(millis_now() + I2C_TIMEOUT_MS);
+    uint8_t index;
+
+    TWI0.MADDR = (uint8_t)(I2C_SLAVE_ADDRESS << 1U);
+    if (i2c_wait_for(TWI_WIF_bm, deadline) == 0U) {
+        return 0U;
+    }
+    if ((TWI0.MSTATUS & TWI_RXACK_bm) != 0U) {
+        i2c_stop();
+        return 0U;
+    }
+
+    /* Prime the TWI data transfer before loading MDATA. */
+    TWI0.MCTRLB = TWI_MCMD_RECVTRANS_gc;
+    TWI0.MDATA = reg;
+    if (i2c_wait_for(TWI_WIF_bm, deadline) == 0U) {
+        return 0U;
+    }
+    if ((TWI0.MSTATUS & TWI_RXACK_bm) != 0U) {
+        i2c_stop();
+        return 0U;
+    }
+
+    for (index = 0U; index < length; ++index) {
+        TWI0.MDATA = data[index];
+        if (i2c_wait_for(TWI_WIF_bm, deadline) == 0U) {
+            return 0U;
+        }
+        if ((TWI0.MSTATUS & TWI_RXACK_bm) != 0U) {
+            i2c_stop();
+            return 0U;
+        }
+    }
+
+    i2c_stop();
+    return 1U;
+}
+
 static void set_status_outputs(uint8_t status)
 {
     STATUS_PORT.OUTCLR = MOVING_PIN | STILL_PIN | NONE_PIN;
@@ -144,6 +186,18 @@ static void set_status_outputs(uint8_t status)
     }
 }
 
+static uint8_t play_next_dfplayer_file(uint8_t file)
+{
+    const uint8_t command_data[] = {
+        DFPLAYER_FOLDER, file, 1U
+    };
+
+    /* Starting at 0x23 writes folder, file, then execute at 0x25. */
+    return i2c_write_registers(DFPLAYER_PLAY_REGISTER,
+                               command_data,
+                               sizeof(command_data));
+}
+
 ISR(TCB0_INT_vect)
 {
     TCB0.INTFLAGS = TCB_CAPT_bm;
@@ -153,7 +207,9 @@ ISR(TCB0_INT_vect)
 int main(void)
 {
     uint16_t next_poll;
+    uint16_t next_play;
     uint8_t status;
+    uint8_t next_file = DFPLAYER_FIRST_FILE;
 
     clock_init();
     gpio_init();
@@ -162,17 +218,26 @@ int main(void)
     sei();
 
     next_poll = 0U;
+    next_play = DFPLAYER_PLAY_INTERVAL_MS;
     for (;;) {
-        if (deadline_reached(next_poll) == 0U) {
-            continue;
+        if (deadline_reached(next_poll) != 0U) {
+            next_poll = (uint16_t)(millis_now() + I2C_POLL_PERIOD_MS);
+            if (i2c_read_register(0x00U, &status) != 0U) {
+                set_status_outputs(status);
+            } else {
+                /* A missing/unreadable slave is treated as no detected target. */
+                set_status_outputs(RADAR_NOT_DETECTED);
+            }
         }
 
-        next_poll = (uint16_t)(millis_now() + I2C_POLL_PERIOD_MS);
-        if (i2c_read_register(0x00U, &status) != 0U) {
-            set_status_outputs(status);
-        } else {
-            /* A missing/unreadable slave is treated as no detected target. */
-            set_status_outputs(RADAR_NOT_DETECTED);
+        if (deadline_reached(next_play) != 0U) {
+            next_play = (uint16_t)(millis_now() + DFPLAYER_PLAY_INTERVAL_MS);
+            if (play_next_dfplayer_file(next_file) != 0U) {
+                ++next_file;
+                if (next_file > DFPLAYER_LAST_FILE) {
+                    next_file = DFPLAYER_FIRST_FILE;
+                }
+            }
         }
     }
 }

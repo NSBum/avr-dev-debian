@@ -18,3 +18,20 @@ The master polls the slave status register (`0x00`) every 50 ms. An I2C
 timeout or missing slave is treated as not detected and drives PA7 high.
 Confirm shared ground, compatible I2C voltage levels, and pull-up placement
 on the physical bus.
+
+Every 5 seconds, the master writes the DFPlayer folder/file convenience
+command to the slave, beginning with folder `04`, file `0001`, then advancing
+through files `0002` to `0005` and repeating. The write starts at slave
+register `0x23` and sends three consecutive values: folder, file, and nonzero
+execute. For example, folder 04/file 0001 is sent as:
+
+```text
+I2C write to slave 0x30: 23 04 01 01
+                         ^^    ^^
+                         |     +-- execute register 0x25
+                         +-------- register 0x23, then folder 04 and file 01
+```
+
+The slave translates this to native DFPlayer command `0x0F` with parameter
+`0x0401`. The master does not request a feedback frame; the I2C transaction
+only confirms that the command was accepted by the slave's I2C interface.
