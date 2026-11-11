@@ -17,6 +17,7 @@ Use the local skills for task-specific workflows:
 - [`avr-project`](.agents/skills/avr-project/SKILL.md): establish or review a project’s MCU, clock, programmer, Makefile, and directory structure.
 - [`attiny1-firmware`](.agents/skills/attiny1-firmware/SKILL.md): implement and validate bare-metal drivers and application firmware for tinyAVR 1-series devices. Read its relevant references and use the exact device datasheet.
 - [`avr-programming`](.agents/skills/avr-programming/SKILL.md): identify, program, verify, and diagnose AVR targets with AVRDUDE and Atmel-ICE.
+- [`avr-documentation-writing`](.agents/skills/avr-documentation-writing/SKILL.md): produce documentation for the project, including README.md and other explanatory documents intended for end-users and developers alike.
 
 For a new project, establish the project contract first, then apply the device-firmware skill for register-level changes. Apply the programming skill only when the task involves the physical target or programmer.
 
