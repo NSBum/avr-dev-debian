@@ -30,12 +30,18 @@ static void gpio_init(void)
 
 static void timer_init(void)
 {
+    // Disable 16-bit timer/counter Type B
     TCB0.CTRLA = 0;
+    // Set periodic interrupt mode
     TCB0.CTRLB = TCB_CNTMODE_INT_gc;
     /* CLK_PER/2 = 10 MHz; 10,000 ticks = 1 ms. */
     TCB0.CCMP = 9999U;
+    // Capture interrupt flag cleared by writing 1 to it
+    // write-one-to-clear semantics
     TCB0.INTFLAGS = TCB_CAPT_bm;
+    // Enable interrupt on capture
     TCB0.INTCTRL = TCB_CAPT_bm;
+    // /2 of system clock and enable the timer
     TCB0.CTRLA = TCB_CLKSEL_CLKDIV2_gc | TCB_ENABLE_bm;
 }
 
@@ -57,13 +63,26 @@ static uint8_t deadline_reached(uint16_t deadline)
 
 static void i2c_init(void)
 {
-    PORTMUX.CTRLB &= (uint8_t)~PORTMUX_TWI0_bm;
+    // Select the default TWI0 pin routing.
+    PORTMUX.CTRLB &= ~PORTMUX_TWI0_bm;
+
+    // Configure SDA and SCL pins as inputs (release both lines).
     I2C_PORT.DIRCLR = I2C_SDA_PIN | I2C_SCL_PIN;
 
+    // Configure TWI0 SDA hold time to 50 ns.
     TWI0.CTRLA = TWI_SDAHOLD_50NS_gc;
+
+    // Set the TWI0 master baud rate (SCL clock frequency).
+    // TWI0_BAUD_VALUE defined by calculation in config.h
     TWI0.MBAUD = TWI0_BAUD_VALUE;
+
+    // Enable the TWI0 master peripheral.
     TWI0.MCTRLA = TWI_ENABLE_bm;
+
+    // Clear master control B: no active command or ACK action.
     TWI0.MCTRLB = 0;
+
+    // Initialize the TWI0 master bus state to IDLE.
     TWI0.MSTATUS = TWI_BUSSTATE_IDLE_gc;
 }
 
